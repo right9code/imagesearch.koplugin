@@ -24,7 +24,7 @@ The plugin supports two AI providers:
 
 #### 1. Pollinations.ai (Default)
 - **Status**: Requires API key now
-- **Setup**: [Register on the webset and generate api-keys](https://pollinations.ai/)
+- **Setup**: [Register on the website and generate api-keys](https://pollinations.ai/)
 
 #### 2. Google Gemini (Nano Banana)
 - **Status**: High-quality, requires API Key.
