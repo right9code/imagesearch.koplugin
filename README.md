@@ -23,8 +23,8 @@ A powerful plugin for KOReader that allows you to search for images on the web o
 The plugin supports two AI providers:
 
 #### 1. Pollinations.ai (Default)
-- **Status**: Zero-config, 100% Free.
-- **Setup**: None! Just select "Pollinations" in the settings and start generating. No API key required.
+- **Status**: Requires API key now
+- **Setup**: [Register on the webset and generate api-keys](https://pollinations.ai/)
 
 #### 2. Google Gemini (Nano Banana)
 - **Status**: High-quality, requires API Key.
@@ -53,11 +53,11 @@ Tap any thumbnail to see it full-screen.
 | Setting | Description |
 | :--- | :--- |
 | **Search Source** | Choose between DuckDuckGo, Wikipedia, or Openverse. |
-| **AI Provider** | Switch between Pollinations.ai (Free) or Gemini (Paid/API Key required). |
+| **AI Provider** | Switch between Pollinations.ai (Requires API Key now) or Gemini (Paid/API Key required). |
 | **Download Directory** | Set where saved images are stored (Default: Device Root, e.g., `/mnt/onboard`). |
 | **Grid Rows/Cols** | Customize how many images show per page (e.g., 2 for large views, 3 for more variety). |
 
 ---
 **Author**: right9code  
-**Version**: 1.0  
+**Version**: 1.1  
 **License**: [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/)
