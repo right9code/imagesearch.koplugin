@@ -225,14 +225,14 @@ function ImageSearch:addToMainMenu(menu_items)
                     text_func = function()
                         local provider = G_reader_settings:readSetting("ai_provider") or "pollinations"
                         if provider == "pollinations" then
-                            return _("AI Provider: Pollinations (Free)")
+                            return _("AI Provider: Pollinations")
                         else
                             return _("AI Provider: Gemini")
                         end
                     end,
                     sub_item_table = {
                         {
-                            text = _("Pollinations.ai (Free, No Key)"),
+                            text = _("Pollinations.ai (Requires Key)"),
                             checked_func = function()
                                 return (G_reader_settings:readSetting("ai_provider") or "pollinations") == "pollinations"
                             end,
@@ -250,6 +250,20 @@ function ImageSearch:addToMainMenu(menu_items)
                             end,
                         },
                     },
+                },
+                {
+                    text = _("Set Pollinations API Key"),
+                    keep_menu_open = true,
+                    callback = function()
+                         self:onSetPollinationsKey()
+                    end,
+                },
+                {
+                    text = _("Set Pollinations Model"),
+                    keep_menu_open = true,
+                    callback = function()
+                         self:onSetPollinationsModel()
+                    end,
                 },
                 {
                     text = _("Set Gemini API Key"),
@@ -622,6 +636,83 @@ end
 
 
 
+function ImageSearch:onSetPollinationsKey()
+    local InputDialog = require("ui/widget/inputdialog")
+    local InfoMessage = require("ui/widget/infomessage")
+    
+    local saved = G_reader_settings:readSetting("pollinations_api_key") or ""
+    
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Set Pollinations API Key"),
+        input = saved,
+        hint = _("Enter your Pollinations.ai API Key (sk_... or pk_...) from enter.pollinations.ai"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    callback = function()
+                        local key = input_dialog:getInputText()
+                        G_reader_settings:saveSetting("pollinations_api_key", key)
+                        UIManager:close(input_dialog)
+                        UIManager:show(InfoMessage:new{
+                            text = _("Pollinations API Key saved"),
+                            timeout = 2
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
+function ImageSearch:onSetPollinationsModel()
+    local InputDialog = require("ui/widget/inputdialog")
+    local InfoMessage = require("ui/widget/infomessage")
+    local PollinationsClient = require("pollinations_client")
+    local current_model = G_reader_settings:readSetting("pollinations_model") or PollinationsClient.DEFAULT_MODEL
+
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Set Pollinations Model"),
+        input = current_model,
+        hint = _("Model: flux, turbo, gptimage, kontext, seedream, nanobanana"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    callback = function()
+                        local model = input_dialog:getInputText()
+                        if model == "" then model = nil end
+                        G_reader_settings:saveSetting("pollinations_model", model)
+                        UIManager:close(input_dialog)
+                        UIManager:show(InfoMessage:new{
+                            text = _("Pollinations model set to: ") .. (model or PollinationsClient.DEFAULT_MODEL),
+                            timeout = 2
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
 function ImageSearch:onSetGeminiKey()
     local InputDialog = require("ui/widget/inputdialog")
     local InfoMessage = require("ui/widget/infomessage")
@@ -783,9 +874,20 @@ function ImageSearch:performGeneration(prompt)
                 end
                 results, err = GeminiClient.generateImage(prompt, api_key)
             else
-                -- Use Pollinations (default, no API key needed)
+                -- Use Pollinations
                 local PollinationsClient = require("pollinations_client")
-                results, err = PollinationsClient.generateImage(prompt)
+                local api_key = G_reader_settings:readSetting("pollinations_api_key")
+                
+                if not api_key or api_key == "" then
+                    UIManager:close(loading_dialog)
+                    UIManager:show(InfoMessage:new{
+                        text = _("Please set your Pollinations API Key in settings first."),
+                        timeout = 3
+                    })
+                    return
+                end
+                local pollinations_model = G_reader_settings:readSetting("pollinations_model")
+                results, err = PollinationsClient.generateImage(prompt, api_key, { model = pollinations_model })
             end
 
             logger.info("ImageSearch: Generation finished, closing loading dialog")

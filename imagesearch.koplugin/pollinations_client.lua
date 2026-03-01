@@ -1,74 +1,111 @@
 local https = require("ssl.https")
-local http = require("socket.http")
 local ltn12 = require("ltn12")
 local logger = require("logger")
 local CacheManager = require("image_cache_manager")
 
 local PollinationsClient = {}
 
--- Pollinations.ai - Completely FREE, no API key, no registration
--- Simple REST endpoint that returns images directly
-local BASE_URL = "https://image.pollinations.ai/prompt/"
+-- Pollinations.ai Image Generation - gen.pollinations.ai API v0.3.0
+-- Get your key at: https://enter.pollinations.ai
+local BASE_URL = "https://gen.pollinations.ai/image"
 
-function PollinationsClient.generateImage(prompt)
+-- Available models: flux (default), turbo, gptimage, kontext, seedream, nanobanana, nanobanana-pro
+PollinationsClient.DEFAULT_MODEL = "flux"
+
+function PollinationsClient.generateImage(prompt, api_key, options)
     if not prompt or prompt == "" then
         return nil, "Prompt cannot be empty."
     end
+    if not api_key or api_key == "" then
+        return nil, "API Key is required. Get one at enter.pollinations.ai"
+    end
 
-    logger.info("Pollinations: Generating image for prompt:", prompt)
+    options = options or {}
+    local model  = options.model or PollinationsClient.DEFAULT_MODEL
+    local width  = options.width  or 1024
+    local height = options.height or 1024
 
-    -- URL encode the prompt
-    local encoded_prompt = prompt:gsub("([^%w%-%_%.%~])", function(c)
+    logger.info("Pollinations: model=" .. model .. " prompt=" .. prompt)
+
+    -- URL-encode the prompt
+    local escaped_prompt = prompt:gsub("([^%w%.%-%_])", function(c)
         return string.format("%%%02X", string.byte(c))
     end)
-    
-    local url = BASE_URL .. encoded_prompt
-    
-    -- Additional parameters (optional, but help improve quality)
-    url = url .. "?width=1024&height=1024&seed=" .. math.random(1, 999999)
-    
+
+    -- Build URL with query parameters
+    local url = BASE_URL .. "/" .. escaped_prompt
+        .. "?model="  .. model
+        .. "&width="  .. tostring(width)
+        .. "&height=" .. tostring(height)
+        .. "&nologo=true"
+
+    logger.info("Pollinations: URL=" .. url)
+
     local response_chunks = {}
-    local ok, status_code, headers, status_line = http.request {
-        url = url,
-        method = "GET",
-        redirect = true, -- Follow redirects
+    local ok, code, response_headers, status_line = https.request{
+        url     = url,
+        method  = "GET",
+        headers = {
+            ["Authorization"] = "Bearer " .. api_key,
+            ["Accept"]        = "image/jpeg, image/png, */*",
+        },
         sink = ltn12.sink.table(response_chunks),
     }
 
-    if not ok or status_code ~= 200 then
-        logger.warn("Pollinations: API request failed", status_code, status_line)
-        return nil, "API Error: " .. (status_line or status_code or "Unknown")
+    logger.info("Pollinations: ok=" .. tostring(ok) .. " code=" .. tostring(code))
+
+    if not ok then
+        return nil, "Network error: " .. tostring(code or status_line or "connection failed")
     end
 
-    local image_data = table.concat(response_chunks)
-    
-    if not image_data or #image_data < 100 then
-        logger.warn("Pollinations: No valid image data received")
-        return nil, "Invalid image data received"
+    code = tonumber(code) or 0
+
+    if code ~= 200 then
+        if code == 401 then return nil, "Invalid API Key (401). Get one at enter.pollinations.ai" end
+        if code == 402 then return nil, "Insufficient pollen balance (402). Check enter.pollinations.ai" end
+        if code == 403 then return nil, "Access denied (403). Check your API key permissions." end
+        if code == 400 then return nil, "Bad request (400). Try a different prompt." end
+        return nil, "API Error " .. tostring(code) .. ": " .. tostring(status_line or "Unknown")
     end
 
-    -- Save to Cache
-    local filename = "ai_pollinations_" .. os.time() .. "_" .. math.random(1000, 9999) .. ".jpg"
+    local image_content = table.concat(response_chunks)
+    if not image_content or #image_content == 0 then
+        return nil, "Empty response from Pollinations API"
+    end
+    logger.info("Pollinations: received " .. tostring(#image_content) .. " bytes")
+
+    -- Determine file extension
+    local ext = ".jpg"
+    if response_headers then
+        local ct = (response_headers["content-type"] or response_headers["Content-Type"] or ""):lower()
+        if ct:find("png") then ext = ".png" end
+    end
+
+    -- Save to cache
     local cache_dir = CacheManager.getCacheDir()
+    if not cache_dir then
+        return nil, "Failed to get cache directory"
+    end
+    local filename  = "pollinations_" .. os.time() .. "_" .. math.random(1000, 9999) .. ext
     local full_path = cache_dir .. "/" .. filename
 
-    local f = io.open(full_path, "wb")
+    local f, ferr = io.open(full_path, "wb")
     if not f then
-        return nil, "Failed to save image to cache"
+        return nil, "Failed to save image: " .. tostring(ferr or "unknown")
     end
-    f:write(image_data)
+    f:write(image_content)
     f:close()
 
-    logger.info("Pollinations: Image saved to", full_path)
-    
+    logger.info("Pollinations: saved to " .. full_path)
+
     return {
         {
-            title = prompt,
-            description = "Generated by Pollinations.ai (Free & Open Source)",
+            title         = prompt,
+            description   = "Generated by Pollinations.ai (" .. model .. ")",
             thumbnail_url = "file://" .. full_path,
-            full_url = "file://" .. full_path,
-            is_local = true,
-            local_path = full_path
+            full_url      = "file://" .. full_path,
+            is_local      = true,
+            local_path    = full_path,
         }
     }
 end
