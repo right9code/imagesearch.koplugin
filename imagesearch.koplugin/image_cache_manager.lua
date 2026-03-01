@@ -4,20 +4,31 @@ local util = require("util")
 
 local CacheManager = {}
 
+-- Helper: create directory and all parents (mkdir -p)
+local function mkdirp(path)
+    -- Try direct creation first (works if parent exists)
+    local ok, err = lfs.mkdir(path)
+    if ok or err == "File exists" then return true end
+    -- Parent may be missing: recursively create it
+    local parent = path:match("^(.+)/[^/]+")
+    if parent and parent ~= path then
+        local parent_ok = mkdirp(parent)
+        if not parent_ok then return false, "failed to create " .. parent end
+        ok, err = lfs.mkdir(path)
+        if ok or err == "File exists" then return true end
+    end
+    return false, err
+end
+
 -- Get cache directory for plugin
 function CacheManager.getCacheDir()
-    -- Use plugin directory for cache
     local DataStorage = require("datastorage")
-    local plugin_dir = DataStorage:getDataDir() .. "/plugins/imagesearch.koplugin"
-    local cache_dir = plugin_dir .. "/cache"
-    
-    -- Create if doesn't exist
-    local ok, err = lfs.mkdir(cache_dir)
-    if not ok and err ~= "File exists" then
+    local cache_dir = DataStorage:getDataDir() .. "/cache/imagesearch"
+    local ok, err = mkdirp(cache_dir)
+    if not ok then
         logger.warn("ImageSearch: Failed to create cache dir:", err)
         return nil, err
     end
-    
     return cache_dir
 end
 
