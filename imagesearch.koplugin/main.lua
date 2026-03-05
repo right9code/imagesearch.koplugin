@@ -152,6 +152,23 @@ function ImageSearch:init()
                 end,
             }
         end)
+
+        self.ui.highlight:addToHighlightDialog("translgen", function(_reader_highlight_instance)
+            return {
+                text = _("translGen"),
+                callback = function()
+                    if _reader_highlight_instance.selected_text and _reader_highlight_instance.selected_text.text then
+                        local text = _reader_highlight_instance.selected_text.text
+                        if text ~= "" then
+                            if _reader_highlight_instance.onClose then
+                                _reader_highlight_instance:onClose()
+                            end
+                            self:performTranslGen(text)
+                        end
+                    end
+                end,
+            }
+        end)
     end
 end
 
@@ -913,5 +930,118 @@ function ImageSearch:performGeneration(prompt)
         end)
     end)
 end
+
+function ImageSearch:performTranslGen(selected_text)
+    local https       = require("ssl.https")
+    local ltn12       = require("ltn12")
+    local json        = require("json")
+    local InfoMessage = require("ui/widget/infomessage")
+    local InputDialog = require("ui/widget/inputdialog")
+
+    -- Use Gemini API key (Google) — only for text, Pollinations is used for images
+    local GeminiClient = require("gemini_client")
+    local api_key = GeminiClient.getApiKey()
+                 or G_reader_settings:readSetting("gemini_api_key")
+                 or ""
+    if api_key == "" then
+        UIManager:show(InfoMessage:new{
+            text = _("Please set your Gemini API Key in settings first."),
+            timeout = 3
+        })
+        return
+    end
+
+    -- Show loading indicator
+    local loading = InfoMessage:new{ text = _("translGen: building prompt...") }
+    UIManager:show(loading)
+
+    UIManager:scheduleIn(0.1, function()
+
+        -- Gemini REST endpoint (gemini-2.0-flash is fast and cheap for text)
+        local model = "gemini-2.0-flash"
+        local url   = "https://generativelanguage.googleapis.com/v1beta/models/"
+                   .. model .. ":generateContent"
+
+        local instruction = "You are an expert image prompt engineer for the Flux AI image model. "
+            .. "Your task: read the following text (which may be in any language including Arabic), "
+            .. "understand its meaning, and write ONE concise English image generation prompt "
+            .. "optimized for Flux. The prompt must be vivid, descriptive, focused on visual "
+            .. "elements, use artistic style keywords, be under 120 words. "
+            .. "Output ONLY the prompt, no explanation, no preamble, no quotes.\n\nText:\n"
+            .. selected_text
+
+        local payload = json.encode({
+            contents = {
+                { parts = { { text = instruction } } }
+            }
+        })
+
+        local chunks = {}
+        local ok, code = https.request{
+            url    = url,
+            method = "POST",
+            headers = {
+                ["Content-Type"]   = "application/json",
+                ["Content-Length"] = tostring(#payload),
+                ["x-goog-api-key"] = api_key,
+            },
+            source = ltn12.source.string(payload),
+            sink   = ltn12.sink.table(chunks),
+        }
+
+        UIManager:close(loading)
+
+        local generated_prompt = nil
+        if ok and tonumber(code) == 200 then
+            local body = table.concat(chunks)
+            local ok2, data = pcall(function() return json.decode(body) end)
+            if ok2 and data and data.candidates and data.candidates[1] then
+                local parts = data.candidates[1].content and data.candidates[1].content.parts
+                if parts and parts[1] and parts[1].text then
+                    generated_prompt = parts[1].text:match("^%s*(.-)%s*$")
+                end
+            end
+        end
+
+        if not generated_prompt then
+            UIManager:show(InfoMessage:new{
+                text = _("translGen: failed (code: " .. tostring(code) .. ")"),
+                timeout = 3
+            })
+            return
+        end
+
+        -- Show prompt for review/edit before sending to Pollinations
+        local input_dialog
+        input_dialog = InputDialog:new{
+            title = _("translGen — Review Prompt"),
+            input = generated_prompt,
+            buttons = {
+                {
+                    {
+                        text = _("Cancel"),
+                        callback = function()
+                            UIManager:close(input_dialog)
+                        end,
+                    },
+                    {
+                        text = _("Generate ▶"),
+                        is_enter_default = true,
+                        callback = function()
+                            local final = input_dialog:getInputText()
+                            UIManager:close(input_dialog)
+                            if final and final ~= "" then
+                                self:performGeneration(final)
+                            end
+                        end,
+                    },
+                },
+            },
+        }
+        UIManager:show(input_dialog)
+        input_dialog:onShowKeyboard()
+    end)
+end
+
 
 return ImageSearch
