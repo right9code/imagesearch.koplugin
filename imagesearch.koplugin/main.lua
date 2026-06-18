@@ -172,6 +172,60 @@ function ImageSearch:init()
     end
 end
 
+-- Shared helper: prompt to edit the query, then run the image search.
+function ImageSearch:_promptImageSearch(text)
+    if not text or text == "" then return end
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Image Search"),
+        input = text,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function() UIManager:close(input_dialog) end,
+                },
+                {
+                    text = _("Search"),
+                    is_enter_default = true,
+                    callback = function()
+                        local query = input_dialog:getInputText()
+                        UIManager:close(input_dialog)
+                        if query and query ~= "" then
+                            self:performSearch(query)
+                        end
+                    end,
+                },
+            }
+        },
+    }
+    UIManager:show(input_dialog)
+    input_dialog:onShowKeyboard()
+end
+
+-- Add an "Image Search" button to the single-word dictionary lookup popup.
+-- This KOReader build has no addToDictButtons API, so we use the legacy
+-- DictButtonsReady event (broadcast by dictquicklookup.lua). dict_buttons is
+-- a list of button rows; we insert our button as a new row near the top.
+function ImageSearch:onDictButtonsReady(dict_popup, dict_buttons)
+    local word = dict_popup and dict_popup.word
+    if not word or word == "" then return end
+    local button = {
+        id = "image_search",
+        text = _("Image Search"),
+        callback = function()
+            UIManager:close(dict_popup)
+            self:_promptImageSearch(word)
+        end,
+    }
+    if #dict_buttons >= 1 then
+        table.insert(dict_buttons, 2, { button })
+    else
+        table.insert(dict_buttons, { button })
+    end
+end
+
 function ImageSearch:onImageSearchSelection(text)
     if not text or text == "" then
         return
